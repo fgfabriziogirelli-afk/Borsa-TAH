@@ -1,0 +1,76 @@
+name: TAH Unicredit Scraper
+
+on:
+  # 18:10 ora italiana = 16:10 UTC in estate (UTC+2) = 17:10 UTC in inverno (UTC+1)
+  # Aspettiamo 10 minuti dall'apertura TAH (18:00) per avere i primi contratti già eseguiti
+  schedule:
+    - cron: "10 16 * * 1-5"   # Lunedì-Venerdì 18:10 ora legale (UTC+2)
+    - cron: "10 17 * * 1-5"   # Lunedì-Venerdì 18:10 ora solare (UTC+1)
+
+  # Permetti esecuzione manuale dal pannello GitHub Actions
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if today is a trading day (skip holidays)
+        id: check_day
+        run: |
+          python - <<'EOF'
+          import datetime, sys
+          
+          # Festività Borsa Italiana (chiusa questi giorni)
+          HOLIDAYS_2025 = {
+              datetime.date(2025, 1, 1),   # Capodanno
+              datetime.date(2025, 4, 18),  # Venerdì Santo
+              datetime.date(2025, 4, 21),  # Lunedì dell'Angelo
+              datetime.date(2025, 5, 1),   # Festa del Lavoro
+              datetime.date(2025, 12, 24), # Vigilia
+              datetime.date(2025, 12, 25), # Natale
+              datetime.date(2025, 12, 26), # S. Stefano
+              datetime.date(2025, 12, 31), # Capodanno (chiusura anticipata - opz.)
+          }
+          HOLIDAYS_2026 = {
+              datetime.date(2026, 1, 1),   # Capodanno
+              datetime.date(2026, 4, 3),   # Venerdì Santo
+              datetime.date(2026, 4, 6),   # Lunedì dell'Angelo
+              datetime.date(2026, 5, 1),   # Festa del Lavoro
+              datetime.date(2026, 12, 24), # Vigilia
+              datetime.date(2026, 12, 25), # Natale
+              datetime.date(2026, 12, 28), # S. Stefano (posticipato)
+              datetime.date(2026, 12, 31), # San Silvestro
+          }
+
+          today = datetime.date.today()
+          holidays = HOLIDAYS_2025 | HOLIDAYS_2026
+          
+          if today in holidays:
+              print(f"::notice::Oggi {today} è festività - skip")
+              with open("$GITHUB_OUTPUT", "a") as f:
+                  f.write("skip=true\n")
+          else:
+              with open("$GITHUB_OUTPUT", "a") as f:
+                  f.write("skip=false\n")
+          EOF
+
+      - name: Run scraper
+        if: steps.check_day.outputs.skip != 'true'
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scraper.py
