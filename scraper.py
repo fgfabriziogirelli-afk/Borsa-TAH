@@ -18,7 +18,6 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 # ── Titoli da monitorare ──────────────────────────────────────────────────────
-# Aggiungi o rimuovi titoli qui. ISIN obbligatorio.
 TITOLI = [
     {"isin": "IT0005239360", "ticker": "UCG",  "nome": "UNICREDIT"},
     # {"isin": "IT0000072618", "ticker": "ISP",  "nome": "INTESA SANPAOLO"},
@@ -26,11 +25,8 @@ TITOLI = [
     # {"isin": "IT0003242622", "ticker": "ENEL", "nome": "ENEL"},
 ]
 
-# Slot temporale da interrogare: mostra i 5 minuti SUCCESSIVI a HH:MM
 TROVA_HH = "18"
 TROVA_MM = "00"
-
-# Pausa tra un titolo e l'altro (buona educazione verso il server)
 PAUSA_TRA_TITOLI = 3
 
 ROME_TZ  = pytz.timezone("Europe/Rome")
@@ -46,7 +42,6 @@ HEADERS  = {
 }
 
 
-# ── URL e fetch ───────────────────────────────────────────────────────────────
 def build_url(isin: str) -> str:
     return (
         f"{BASE_URL}/borsa/azioni/mercato-serale/contratti.html"
@@ -55,11 +50,6 @@ def build_url(isin: str) -> str:
 
 
 def fetch_contracts_tah(isin: str) -> tuple[list[dict], dict]:
-    """
-    GET diretto con filtro HH/MM — Borsa Italiana accetta:
-    /borsa/azioni/mercato-serale/contratti.html?isin=...&mic=MTAH&HH=18&MM=00&lang=it
-    Restituisce i contratti del slot di 5 minuti successivi all'orario scelto.
-    """
     url = (
         f"{BASE_URL}/borsa/azioni/mercato-serale/contratti.html"
         f"?isin={isin}&mic=MTAH&HH={TROVA_HH}&MM={TROVA_MM}&lang=it"
@@ -70,12 +60,10 @@ def fetch_contracts_tah(isin: str) -> tuple[list[dict], dict]:
 
 
 def _parse_page(html: str) -> tuple[list[dict], dict]:
-    """Estrae contratti e sommario dall'HTML della pagina risultante."""
     soup      = BeautifulSoup(html, "html.parser")
     contracts = []
     summary   = {"num_contratti": 0, "quantita_totale": 0}
 
-    # Sommario "NUMERO CONTRATTI: 138  QUANTITÀ TOTALE: 34.102"
     for tag in soup.find_all(string=re.compile(r"numero contratti", re.I)):
         text = tag.strip()
         nc = re.search(r"numero contratti[:\s]+([0-9.,]+)", text, re.I)
@@ -85,7 +73,6 @@ def _parse_page(html: str) -> tuple[list[dict], dict]:
         if qt:
             summary["quantita_totale"] = int(qt.group(1).replace(".", "").replace(",", ""))
 
-    # Tabella contratti
     target = None
     for t in soup.find_all("table"):
         h = (t.find("tr") or t).get_text().lower()
@@ -100,7 +87,6 @@ def _parse_page(html: str) -> tuple[list[dict], dict]:
         if len(cols) < 4:
             continue
         ora = cols[0].get_text(strip=True)
-        # Valida formato ora HH[.,:]MM[.,:]SS
         if not (len(ora) >= 5 and ora[2] in (":", ",", ".")):
             continue
         contracts.append({
@@ -111,7 +97,6 @@ def _parse_page(html: str) -> tuple[list[dict], dict]:
             "tipo":       cols[4].get_text(strip=True) if len(cols) > 4 else "CT",
         })
 
-    # Ordina cronologicamente (sito mostra il più recente in cima)
     def to_time(c):
         try:
             return datetime.strptime(
@@ -124,7 +109,6 @@ def _parse_page(html: str) -> tuple[list[dict], dict]:
     return contracts, summary
 
 
-# ── Statistiche ───────────────────────────────────────────────────────────────
 def calcola_statistiche(contracts: list[dict]) -> dict:
     if not contracts:
         return {}
@@ -151,7 +135,6 @@ def calcola_statistiche(contracts: list[dict]) -> dict:
     }
 
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
 def send_telegram(text: str) -> None:
     r = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -205,7 +188,6 @@ def formatta_messaggio(titolo: dict, contracts: list[dict],
     return msg
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print(f"[{datetime.now(ROME_TZ).strftime('%H:%M:%S')}] "
           f"Scraping TAH — {len(TITOLI)} titolo/i")
