@@ -49,78 +49,24 @@ HEADERS  = {
 # ── URL e fetch ───────────────────────────────────────────────────────────────
 def build_url(isin: str) -> str:
     return (
-        f"{BASE_URL}/borsa/azioni/scheda/contratti-intraday.html"
-        f"?isin={isin}&lang=it"
+        f"{BASE_URL}/borsa/azioni/mercato-serale/contratti.html"
+        f"?isin={isin}&mic=MTAH&lang=it"
     )
 
 
 def fetch_contracts_tah(isin: str) -> tuple[list[dict], dict]:
     """
-    Simula il click su TROVA con HH=18 MM=00:
-      1. GET pagina base → individua il form (action, method, campi hidden)
-      2. Aggiunge hh/mm e invia (GET o POST)
-      3. Parsa la tabella risultante
-
-    Restituisce (contracts_ordinati_cronologicamente, summary_dict)
+    GET diretto con filtro HH/MM — Borsa Italiana accetta:
+    /borsa/azioni/mercato-serale/contratti.html?isin=...&mic=MTAH&HH=18&MM=00&lang=it
+    Restituisce i contratti del slot di 5 minuti successivi all'orario scelto.
     """
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    # ── Step 1: pagina base ──
-    resp = session.get(build_url(isin), timeout=20)
+    url = (
+        f"{BASE_URL}/borsa/azioni/mercato-serale/contratti.html"
+        f"?isin={isin}&mic=MTAH&HH={TROVA_HH}&MM={TROVA_MM}&lang=it"
+    )
+    resp = requests.get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    # Trova il form con il bottone TROVA
-    form   = None
-    action = build_url(isin)
-    method = "get"
-    params = {}
-
-    for f in soup.find_all("form"):
-        testo = f.get_text(" ", strip=True).lower()
-        if "trova" in testo or ("hh" in testo and "mm" in testo):
-            form = f
-            break
-
-    if form:
-        raw_action = form.get("action", "")
-        if raw_action:
-            action = raw_action if raw_action.startswith("http") else BASE_URL + raw_action
-        method = form.get("method", "get").lower()
-
-        # Raccoglie hidden inputs (token CSRF, isin, lang, ecc.)
-        for inp in form.find_all("input"):
-            n = inp.get("name")
-            v = inp.get("value", "")
-            if n:
-                params[n] = v
-
-        # Trova il nome esatto dei campi ora/minuto nei select
-        for sel in form.find_all("select"):
-            n = (sel.get("name") or sel.get("id") or "").lower()
-            if any(k in n for k in ("hh", "ora", "hour", "h")):
-                params[sel.get("name") or sel.get("id")] = TROVA_HH
-            elif any(k in n for k in ("mm", "min", "minute", "m")):
-                params[sel.get("name") or sel.get("id")] = TROVA_MM
-    else:
-        # Fallback: GET con parametri diretti
-        params = {"isin": isin, "lang": "it", "hh": TROVA_HH, "mm": TROVA_MM}
-
-    # Assicuriamoci che hh/mm siano sempre presenti (con nomi generici)
-    if not any(k.lower() in ("hh", "ora", "hour") for k in params):
-        params["hh"] = TROVA_HH
-    if not any(k.lower() in ("mm", "min", "minute") for k in params):
-        params["mm"] = TROVA_MM
-
-    # ── Step 2: submit form ──
-    if method == "post":
-        resp2 = session.post(action, data=params, timeout=20)
-    else:
-        resp2 = session.get(action, params=params, timeout=20)
-    resp2.raise_for_status()
-
-    return _parse_page(resp2.text)
+    return _parse_page(resp.text)
 
 
 def _parse_page(html: str) -> tuple[list[dict], dict]:
