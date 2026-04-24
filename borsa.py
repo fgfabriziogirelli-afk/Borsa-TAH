@@ -67,7 +67,7 @@ def fetch_contracts_tah(isin: str) -> tuple[list[dict], dict]:
     resp = requests.get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     contracts, summary = _parse_page(resp.text)
-
+    print(f"DEBUG prime 3 ore: {[c['ora'] for c in contracts[:3]]}")
     # Filtra solo i contratti delle 18:00:xx (primo minuto TAH)
     contracts_18 = [
         c for c in contracts
