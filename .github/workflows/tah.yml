@@ -1,9 +1,6 @@
 name: TAH Borsa Italiana
 
 on:
-  schedule:
-    - cron: "10 16 * * 1-5"
-    - cron: "10 17 * * 1-5"
   workflow_dispatch:
 
 jobs:
